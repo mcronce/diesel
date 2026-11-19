@@ -103,7 +103,7 @@ use futures_core::Stream;
 use futures_util::FutureExt;
 use std::fmt::Debug;
 use std::future::Future;
-use transaction_manager::AsyncFunc;
+pub use transaction_manager::AsyncFunc;
 
 #[cfg(feature = "async-connection-wrapper")]
 pub mod async_connection_wrapper;
