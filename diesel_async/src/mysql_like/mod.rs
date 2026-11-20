@@ -1,6 +1,9 @@
 use crate::AsyncMultiConnectionHelper;
 use crate::stmt_cache::{CallbackHelper, QueryFragmentHelper, StatementHelper};
-use crate::{AnsiTransactionManager, AsyncConnection, AsyncConnectionCore, SimpleAsyncConnection};
+use crate::{
+    AnsiTransactionManager, AsyncConnection, AsyncConnectionCore, AsyncConnectionWithReturningId,
+    SimpleAsyncConnection,
+};
 use core::marker::PhantomData;
 use diesel::QueryResult;
 use diesel::connection::StrQueryHelper;
@@ -170,6 +173,33 @@ where
 
     fn set_prepared_statement_cache_size(&mut self, size: CacheSize) {
         self.stmt_cache.set_cache_size(size);
+    }
+}
+
+impl<DB: MysqlLikeAsyncBackend> AsyncConnectionWithReturningId for AsyncMysqlLikeConnection<DB>
+where
+    QueryFragmentHelper: QueryFragmentForCachedStatement<DB>,
+{
+    type ReturnedId = Option<u64>;
+    type ExecuteFuture<'conn, 'query> = BoxFuture<'conn, QueryResult<Self::ReturnedId>>;
+
+    fn execute_returning_id<'conn, 'query, T>(
+        &'conn mut self,
+        source: T,
+    ) -> <Self as AsyncConnectionWithReturningId>::ExecuteFuture<'conn, 'query>
+    where
+        T: QueryFragment<Self::Backend> + QueryId + 'query,
+    {
+        self.with_prepared_statement(source, |conn, stmt, binds| async move {
+            let params = mysql_async::Params::try_from(binds)?;
+            conn.exec_drop(&stmt.0, params)
+                .await
+                .map_err(ErrorHelper::<DB>::new)?;
+            if let MaybeCached::CannotCache(stmt) = stmt {
+                conn.close(stmt.0).await.map_err(ErrorHelper::<DB>::new)?;
+            }
+            Ok(conn.last_insert_id())
+        })
     }
 }
 
