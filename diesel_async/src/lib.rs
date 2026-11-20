@@ -418,6 +418,21 @@ pub trait AsyncConnection: AsyncConnectionCore + Sized {
     fn set_prepared_statement_cache_size(&mut self, size: CacheSize);
 }
 
+pub trait AsyncConnectionWithReturningId: AsyncConnection {
+    type ReturnedId;
+    type ExecuteFuture<'conn, 'query>: Future<Output = QueryResult<Self::ReturnedId>> + Send
+    where
+        Self: 'conn;
+
+    /// Execute a single INSERT statement given by a query and return the ID that the database assigns
+    fn execute_returning_id<'conn, 'query, T>(
+        &'conn mut self,
+        source: T,
+    ) -> <Self as AsyncConnectionWithReturningId>::ExecuteFuture<'conn, 'query>
+    where
+        T: QueryFragment<Self::Backend> + QueryId + 'query;
+}
+
 /// `AsyncMultiConnectionHelper` is an async copy of `MultiConnectionHelper` trait.
 /// It is used to support async MultiConnection implementations.
 pub trait AsyncMultiConnectionHelper: AsyncConnectionCore {
